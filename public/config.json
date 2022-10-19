@@ -12,8 +12,8 @@
     {
         "en-US":
         {
-            "name": "<NAME_OF_APP>",
-            "description": "<DESC_OF_APP>",
+            "name": "textible-sms",
+            "description": "Custom Activity creation for JB",
             "step1Label": "Configure Activity"
         }
     },
@@ -27,7 +27,7 @@
               }
             ],
             "outArguments": [],
-            "url": "<HTTPS_URL_OF_APP>/journeybuilder/execute",
+            "url": "https://textible-sms.herokuapp.com/journeybuilder/execute",
             "verb": "POST",
             "body": "",
             "header": "",
@@ -39,28 +39,28 @@
     
     "configurationArguments":
     {
-        "applicationExtensionKey": "<APP EXTENSION KEY>",
+        "applicationExtensionKey": "7c034064-3081-41c8-8ce4-375d21b9a435",
         "save":
         {
-            "url": "<HTTPS_URL_OF_APP>/journeybuilder/save",
+            "url": "https://textible-sms.herokuapp.com/journeybuilder/save",
             "verb": "POST",
             "useJwt": true
         },
         "publish":
         {
-            "url": "<HTTPS_URL_OF_APP>/journeybuilder/publish",
+            "url": "https://textible-sms.herokuapp.com/journeybuilder/publish",
             "verb": "POST",
             "useJwt": true
         },
         "stop":
         {
-            "url": "<HTTPS_URL_OF_APP>/journeybuilder/stop",
+            "url": "https://textible-sms.herokuapp.com/journeybuilder/stop",
             "verb": "POST",
             "useJwt": true
         },
         "validate":
         {
-            "url": "<HTTPS_URL_OF_APP>/journeybuilder/validate",
+            "url": "https://textible-sms.herokuapp.com/journeybuilder/validate",
             "verb": "POST",
             "useJwt": true
         }
