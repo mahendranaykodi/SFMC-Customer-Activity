@@ -1,147 +1,202 @@
-'use strict';
-var util = require('util');
+define(["postmonger"], function (Postmonger) {
+  "use strict";
 
-// Deps
-const Path = require('path');
-const JWT = require(Path.join(__dirname, '..', 'lib', 'jwtDecoder.js'));
-var util = require('util');
-let axios = require("axios");
+  var connection = new Postmonger.Session();
+  var payload = {};
+  var lastStepEnabled = false;
+  var steps = [
+    // initialize to the same value as what's set in config.json for consistency
+    { label: "Step 1", key: "step1" },
+    { label: "Step 2", key: "step2" },
+    { label: "Step 3", key: "step3" },
+    { label: "Step 4", key: "step4", active: false },
+  ];
+  var currentStep = steps[0].key;
 
-// Global Variables
-const tokenURL = `${process.env.authenticationUrl}/v2/token`;
+  $(window).ready(onRender);
 
+  connection.on("initActivity", initialize);
+  connection.on("requestedTokens", onGetTokens);
+  connection.on("requestedEndpoints", onGetEndpoints);
 
-exports.logExecuteData = [];
-function logData(req) {
-    exports.logExecuteData.push({
-        body: req.body,
-        headers: req.headers,
-        trailers: req.trailers,
-        method: req.method,
-        url: req.url,
-        params: req.params,
-        query: req.query,
-        route: req.route,
-        cookies: req.cookies,
-        ip: req.ip,
-        path: req.path,
-        host: req.host,
-        fresh: req.fresh,
-        stale: req.stale,
-        protocol: req.protocol,
-        secure: req.secure,
-        originalUrl: req.originalUrl
+  connection.on("clickedNext", onClickedNext);
+  connection.on("clickedBack", onClickedBack);
+  connection.on("gotoStep", onGotoStep);
+
+  function onRender() {
+    // JB will respond the first time 'ready' is called with 'initActivity'
+    connection.trigger("ready");
+
+    connection.trigger("requestTokens");
+    connection.trigger("requestEndpoints");
+
+    // Disable the next button if a value isn't selected
+    $("#select1").change(function () {
+      var message = getMessage();
+      connection.trigger("updateButton", {
+        button: "next",
+        enabled: Boolean(message),
+      });
+
+      $("#message").html(message);
     });
-    console.log("body: " + util.inspect(req.body));
-    console.log("headers: " + req.headers);
-    console.log("trailers: " + req.trailers);
-    console.log("method: " + req.method);
-    console.log("url: " + req.url);
-    console.log("params: " + util.inspect(req.params));
-    console.log("query: " + util.inspect(req.query));
-    console.log("route: " + req.route);
-    console.log("cookies: " + req.cookies);
-    console.log("ip: " + req.ip);
-    console.log("path: " + req.path);
-    console.log("host: " + req.host);
-    console.log("fresh: " + req.fresh);
-    console.log("stale: " + req.stale);
-    console.log("protocol: " + req.protocol);
-    console.log("secure: " + req.secure);
-    console.log("originalUrl: " + req.originalUrl);
-}
 
-/*
- * POST Handler for / route of Activity (this is the edit route).
- */
-exports.edit = function (req, res) {
-    // Data from the req and put it in an array accessible to the main app.
-    //console.log( req.body );
-    logData(req);
-    res.send(200, 'Edit');
-};
+    // Toggle step 4 active/inactive
+    // If inactive, wizard hides it and skips over it during navigation
+    $("#toggleLastStep").click(function () {
+      lastStepEnabled = !lastStepEnabled; // toggle status
+      steps[3].active = !steps[3].active; // toggle active
 
-/*
- * POST Handler for /save/ route of Activity.
- */
-exports.save = function (req, res) {
-    // Data from the req and put it in an array accessible to the main app.
-    //console.log( req.body );
-    logData(req);
-    res.send(200, 'Save');
-};
+      connection.trigger("updateSteps", steps);
+    });
+  }
 
-/*
- * POST Handler for /execute/ route of Activity.
- */
-exports.execute = function (req, res) {
-    JWT(req.body, process.env.jwtSecret, (err, decoded) => {
-        // verification error -> unauthorized request
-        if (err) {
-            console.error(err);
-            return res.status(401).end();
+  function initialize(data) {
+    if (data) {
+      payload = data;
+    }
+
+    var message;
+    var hasInArguments = Boolean(
+      payload["arguments"] &&
+        payload["arguments"].execute &&
+        payload["arguments"].execute.inArguments &&
+        payload["arguments"].execute.inArguments.length > 0
+    );
+
+    var inArguments = hasInArguments
+      ? payload["arguments"].execute.inArguments
+      : {};
+
+    $.each(inArguments, function (index, inArgument) {
+      $.each(inArgument, function (key, val) {
+        if (key === "message") {
+          message = val;
         }
+      });
+    });
 
-        if (decoded && decoded.inArguments && decoded.inArguments.length > 0) {
-            console.log('##### decoded ####=>', decoded);
-            res.send(200, 'Execute');
+    // If there is no message selected, disable the next button
+    if (!message) {
+      showStep(null, 1);
+      connection.trigger("updateButton", { button: "next", enabled: false });
+      // If there is a message, skip to the summary step
+    } else {
+      $("#select1")
+        .find("option[value=" + message + "]")
+        .attr("selected", "selected");
+      $("#message").html(message);
+      showStep(null, 3);
+    }
+  }
+
+  function onGetTokens(tokens) {
+    // Response: tokens = { token: <legacy token>, fuel2token: <fuel api token> }
+    // console.log(tokens);
+  }
+
+  function onGetEndpoints(endpoints) {
+    // Response: endpoints = { restHost: <url> } i.e. "rest.s1.qa1.exacttarget.com"
+    // console.log(endpoints);
+  }
+
+  function onClickedNext() {
+    if (
+      (currentStep.key === "step3" && steps[3].active === false) ||
+      currentStep.key === "step4"
+    ) {
+      save();
+    } else {
+      connection.trigger("nextStep");
+    }
+  }
+
+  function onClickedBack() {
+    connection.trigger("prevStep");
+  }
+
+  function onGotoStep(step) {
+    showStep(step);
+    connection.trigger("ready");
+  }
+
+  function showStep(step, stepIndex) {
+    if (stepIndex && !step) {
+      step = steps[stepIndex - 1];
+    }
+
+    currentStep = step;
+
+    $(".step").hide();
+
+    switch (currentStep.key) {
+      case "step1":
+        $("#step1").show();
+        connection.trigger("updateButton", {
+          button: "next",
+          enabled: Boolean(getMessage()),
+        });
+        connection.trigger("updateButton", {
+          button: "back",
+          visible: false,
+        });
+        break;
+      case "step2":
+        $("#step2").show();
+        connection.trigger("updateButton", {
+          button: "back",
+          visible: true,
+        });
+        connection.trigger("updateButton", {
+          button: "next",
+          text: "next",
+          visible: true,
+        });
+        break;
+      case "step3":
+        $("#step3").show();
+        connection.trigger("updateButton", {
+          button: "back",
+          visible: true,
+        });
+        if (lastStepEnabled) {
+          connection.trigger("updateButton", {
+            button: "next",
+            text: "next",
+            visible: true,
+          });
         } else {
-            console.error('inArguments invalid.');
-            return res.status(400).end();
+          connection.trigger("updateButton", {
+            button: "next",
+            text: "done",
+            visible: true,
+          });
         }
+        break;
+      case "step4":
+        $("#step4").show();
+        break;
+    }
+  }
 
-    });
-};
+  function save() {
+    var name = $("#select1").find("option:selected").html();
+    var value = getMessage();
 
+    // 'payload' is initialized on 'initActivity' above.
+    // Journey Builder sends an initial payload with defaults
+    // set by this activity's config.json file.  Any property
+    // may be overridden as desired.
+    payload.name = name;
 
-/*
- * POST Handler for /publish/ route of Activity.
- */
-exports.publish = function (req, res) {
-    //console.log( req.body );
-    logData(req);
-    res.send(200, 'Publish');
-};
+    payload["arguments"].execute.inArguments = [{ message: value }];
 
+    payload["metaData"].isConfigured = true;
 
-/*
- * POST Handler for /validate/ route of Activity.
- */
-exports.validate = function (req, res) {
-    // Data from the req and put it in an array accessible to the main app.
-    //console.log( req.body );
-    logData(req);
-    res.send(200, 'Validate');
-};
+    connection.trigger("updateActivity", payload);
+  }
 
-
-/*
- * POST Handler for /Stop/ route of Activity.
- */
-exports.stop = function (req, res) {
-    // Data from the req and put it in an array accessible to the main app.
-    //console.log( req.body );
-    logData(req);
-    res.send(200, 'Stop');
-};
-
-
-/**
- * This function relies on the env variables to be set
- * 
- * This function invokes the enhanced package authentication. 
- * This would return a access token that can be used to call additional Marketing Cloud APIs
- * 
- */
-function retrieveToken () {
-    axios.post(tokenURL, { // Retrieving of token
-        grant_type: 'client_credentials',
-        client_id: process.env.clientId,
-        client_secret: process.env.clientSecret
-    })
-    .then(function (response) {
-        return response.data['access_token'];
-    }).catch(function (error) {
-        return error;
-    });
-}
+  function getMessage() {
+    return $("#select1").find("option:selected").attr("value").trim();
+  }
+});
